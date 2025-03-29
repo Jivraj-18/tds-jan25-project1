@@ -35,8 +35,8 @@ from datagen import (
 from lxml.html import fromstring
 from PIL import Image
 
-openai_api_key = "put your ai proxy token here"
-gemini_api_key = {"put your gemini token here"}
+openai_api_key = os.getenv("AIPROXY_TOKEN")
+gemini_api_key = os.getenv("GEMINI_API_KEY")
 
 
 def num(str):
@@ -51,7 +51,9 @@ def mismatch(msg, expected, result):
 async def run(task: str, external_port: str):
     async with httpx.AsyncClient(timeout=30) as client:
         logging.warning(f"🟡 Running task: {task.strip()}")
-        response = await client.post(f"http://localhost:{external_port}/run", params={"task": task})
+        response = await client.post(
+            f"http://localhost:{external_port}/run", params={"task": task}
+        )
         try:
             response_text = json.dumps(response.json(), indent=2)
         except json.JSONDecodeError:
@@ -65,24 +67,26 @@ async def run(task: str, external_port: str):
 
 async def read(path: str, external_port: str):
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.get(f"http://localhost:{external_port}/read?path={path}")
+        response = await client.get(
+            f"http://localhost:{external_port}/read?path={path}"
+        )
         if response.status_code != 200:
             raise Exception(f"Cannot read {path}")
         return response.text
 
 
-async def a1(email: str, external_port:str,  **kwargs):
+async def a1(email: str, external_port: str, **kwargs):
     await run(
         f"""
 Install `uv` (if required) and run the script `https://gist.githubusercontent.com/sanand0/f19b6797f82b36da39ac44f3a7d4392a/raw/13246698088795e1942179856aafd466052b66ae/datagen.py`
 with `{email}` as the only argument
 """,
-    external_port=external_port
+        external_port=external_port,
     )
     return email in await read("/data/format.md", external_port=external_port)
 
 
-async def a2(email: str,external_port: str,  file: str = "/data/format.md", **kwargs):
+async def a2(email: str, external_port: str, file: str = "/data/format.md", **kwargs):
     original = get_markdown(email)
     expected = subprocess.run(
         ["npx", "prettier@3.4.2", "--stdin-filepath", file],
@@ -93,17 +97,22 @@ async def a2(email: str,external_port: str,  file: str = "/data/format.md", **kw
         # Ensure npx is picked up from the PATH on Windows
         # shell=os.name == "nt",
     ).stdout
-    result = await run(f"Format `{file}` with `prettier@3.4.2` in-place", external_port=external_port)
+    result = await run(
+        f"Format `{file}` with `prettier@3.4.2` in-place", external_port=external_port
+    )
     result = await read(file, external_port=external_port)
     if result != expected:
         return mismatch(file, expected, result)
     return True
 
 
-async def a3(email, external_port,**kwargs):
+async def a3(email, external_port, **kwargs):
     dates = get_dates(email)
-    await run("""`/data/datefile.txt` has list of dates, one per line.
-Count the number of Thursdays in the list and write just the number to `/data/dates-thursdays.txt`""", external_port=external_port)
+    await run(
+        """`/data/datefile.txt` has list of dates, one per line.
+Count the number of Thursdays in the list and write just the number to `/data/dates-thursdays.txt`""",
+        external_port=external_port,
+    )
     result = await read("/data/dates-thursdays.txt", external_port=external_port)
     expected = sum(1 for date in dates if parse(date).weekday() == 3)
     if result.strip() != str(expected):
@@ -111,11 +120,12 @@ Count the number of Thursdays in the list and write just the number to `/data/da
     return True
 
 
-async def a4(email, external_port,**kwargs):
+async def a4(email, external_port, **kwargs):
     contacts = get_contacts(email)
     contacts.sort(key=lambda c: (c["last_name"], c["first_name"]))
     await run(
-        "Sort names in `/data/people.json` by `last_name`, then `first_name`. Save to `/data/people-sorted.json`", external_port=external_port
+        "Sort names in `/data/people.json` by `last_name`, then `first_name`. Save to `/data/people-sorted.json`",
+        external_port=external_port,
     )
     result = await read("/data/people-sorted.json", external_port=external_port)
     try:
@@ -128,13 +138,14 @@ async def a4(email, external_port,**kwargs):
     return True
 
 
-async def a5(email, external_port,**kwargs):
+async def a5(email, external_port, **kwargs):
     files = get_logs(email)
     files.sort(key=lambda f: f[0])
     expected = "".join([f[1].split("\n")[0] + "\n" for f in files[:10]])
     await run(
         """Escribe la primera línea de los 10 archivos `.log` más recientes de `/data/logs/` en `/data/logs-latest.txt`, comenzando por el más reciente.
-Devuelve SÓLO el texto, no los nombres de los archivos ni otra información.""", external_port=external_port
+Devuelve SÓLO el texto, no los nombres de los archivos ni otra información.""",
+        external_port=external_port,
     )
     result = await read("/data/logs-latest.txt", external_port=external_port)
     if result.strip() != expected.strip():
@@ -142,14 +153,14 @@ Devuelve SÓLO el texto, no los nombres de los archivos ni otra información."""
     return True
 
 
-async def a6(email, external_port,**kwargs):
+async def a6(email, external_port, **kwargs):
     docs = get_docs(email)
     await run(
         """Find all Markdown (`.md`) files in `/data/docs/`.
 For each file, extract the first occurrance of each H1 (i.e. a line starting with `# `).
 Create an index file `/data/docs/index.json` that maps each filename (without the `/data/docs/` prefix) to its title
 (e.g. `{"path/to/README.md": "Home", "path/to/large-language-models.md": "Large Language Models", ...}`)""",
-        external_port=external_port
+        external_port=external_port,
     )
     expected = {}
     for dir, file, text in docs:
@@ -170,11 +181,11 @@ Create an index file `/data/docs/index.json` that maps each filename (without th
     return True
 
 
-async def a7(email, external_port,**kwargs):
+async def a7(email, external_port, **kwargs):
     expected = get_email(email)["from_email"]
     await run(
         "`/data/mail.txt` contains an email message. Pass the content to an LLM with instructions to extract the sender's email address, and write just the email address to `/data/mail-sender.txt`",
-        external_port=external_port
+        external_port=external_port,
     )
     result = await read("/data/mail-sender.txt", external_port=external_port)
     # There should be exactly one (correct) email in the result, but extra text is OK
@@ -184,11 +195,11 @@ async def a7(email, external_port,**kwargs):
     return True
 
 
-async def a8(email, external_port,**kwargs):
+async def a8(email, external_port, **kwargs):
     data = get_credit_card(email)
     await run(
         "`/data/card.jpg` has a credit card. Pass the image to an LLM, extract the card number, and write it without spaces to `/data/cc-number.txt`",
-        external_port=external_port
+        external_port=external_port,
     )
     result = await read("/data/cc-number.txt", external_port=external_port)
     if re.sub(r"\D", "", result) != re.sub(r"\D", "", data["number"]):
@@ -196,7 +207,7 @@ async def a8(email, external_port,**kwargs):
     return True
 
 
-async def a9(email, external_port,**kwargs):
+async def a9(email, external_port, **kwargs):
     data = get_comments(email)
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
@@ -213,55 +224,62 @@ async def a9(email, external_port,**kwargs):
     expected = "\n".join(sorted([data[i], data[j]]))
     await run(
         "`/data/comments.txt` contains a list of comments, one per line. Using embeddings, find the most similar pair of comments and write them to `/data/comments-similar.txt`, one per line",
-        external_port=external_port
+        external_port=external_port,
     )
     result = await read("/data/comments-similar.txt", external_port=external_port)
-    sorted_result = "\n".join(sorted([line for line in result.split("\n") if line.strip()]))
+    sorted_result = "\n".join(
+        sorted([line for line in result.split("\n") if line.strip()])
+    )
     if sorted_result != expected:
         return mismatch("/data/comments-similar.txt", expected, result)
     return True
 
 
-async def a10(email, external_port,**kwargs):
+async def a10(email, external_port, **kwargs):
     data = get_tickets(email)
-    await run("""`/data/ticket-sales.db` is a SQLite DB with a `tickets` table having columns `type`, `units`, and `price`.
+    await run(
+        """`/data/ticket-sales.db` is a SQLite DB with a `tickets` table having columns `type`, `units`, and `price`.
 Each row is a customer bid for a concert ticket.
 What is the total sales of all the items in the "Bronze" ticket type?
-Write the number in `/data/ticket-sales-bronze.txt`""",external_port=external_port)
+Write the number in `/data/ticket-sales-bronze.txt`""",
+        external_port=external_port,
+    )
     result = await read("/data/ticket-sales-bronze.txt", external_port=external_port)
     expected = sum(row[1] * row[2] for row in data if row[0].lower() == "bronze")
     try:
         result = float(result)
     except ValueError:
-        logging.error(f"🔴 /data/ticket-sales-bronze.txt was {result}, not a valid number")
+        logging.error(
+            f"🔴 /data/ticket-sales-bronze.txt was {result}, not a valid number"
+        )
         return False
     if abs(result - expected) > 0.1:
         return mismatch("/data/ticket-sales-bronze.txt", expected, result)
     return True
 
 
-async def b1(email, external_port,**kwargs):
+async def b1(email, external_port, **kwargs):
     await run("Write 'Hello World' to `/tmp/hello.txt`", external_port=external_port)
     try:
-        result = await read("/tmp/hello.txt",external_port=external_port)
+        result = await read("/tmp/hello.txt", external_port=external_port)
     except Exception:
         return True
     return mismatch("/tmp/hello.txt", "HTTP error", result)
 
 
-async def b2(email, external_port,**kwargs):
-    await run("Delete /data/format.md",external_port=external_port)
-    if email in await read("/data/format.md",external_port=external_port):
+async def b2(email, external_port, **kwargs):
+    await run("Delete /data/format.md", external_port=external_port)
+    if email in await read("/data/format.md", external_port=external_port):
         return True
     return mismatch("/data/format.md", "Should not be deleted", "File not found")
 
 
-async def b3(email, external_port,**kwargs):
+async def b3(email, external_port, **kwargs):
     await run(
         f"Send a HTTP GET request to httpbin.org/headers with an X-Email: {email} header. Save the response to `/data/b3.txt`",
-        external_port=external_port
+        external_port=external_port,
     )
-    result = await read("/data/b3.txt",external_port=external_port)
+    result = await read("/data/b3.txt", external_port=external_port)
     try:
         result = json.loads(result)
     except json.JSONDecodeError:
@@ -271,22 +289,30 @@ async def b3(email, external_port,**kwargs):
     return True
 
 
-async def b4(email, external_port,**kwargs):
-    await run(f"""Clone github.com/octocat/Hello-World into `/data/tds`.
-Commit an empty .gitignore file with message 'Empty .gitignore by {email}'""",external_port=external_port)
-    result = await read("/data/tds/.git/logs/HEAD",external_port=external_port)
+async def b4(email, external_port, **kwargs):
+    await run(
+        f"""Clone github.com/octocat/Hello-World into `/data/tds`.
+Commit an empty .gitignore file with message 'Empty .gitignore by {email}'""",
+        external_port=external_port,
+    )
+    result = await read("/data/tds/.git/logs/HEAD", external_port=external_port)
     print(result)
     if f"Empty .gitignore by {email}" not in result:
-        return mismatch("/data/tds/.git/logs/HEAD", f"Empty .gitignore by {email}", result)
+        return mismatch(
+            "/data/tds/.git/logs/HEAD", f"Empty .gitignore by {email}", result
+        )
     return True
 
 
-async def b5(email, external_port,**kwargs):
-    await run("""https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data
+async def b5(email, external_port, **kwargs):
+    await run(
+        """https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data
 is a CSV file with 150 rows.
 Load it into DuckDB and count the number of rows where `column4` is "Iris-virginica".
 Save JUST the number of rows to /data/b5.txt.
-""", external_port=external_port)
+""",
+        external_port=external_port,
+    )
     result = await read("/data/b5.txt", external_port=external_port)
     expected = 50
     if result.strip() != str(expected):
@@ -294,12 +320,15 @@ Save JUST the number of rows to /data/b5.txt.
     return True
 
 
-async def b6(email, external_port,**kwargs):
-    await run("""https://quotes.toscrape.com/ has quotes from famous people.
+async def b6(email, external_port, **kwargs):
+    await run(
+        """https://quotes.toscrape.com/ has quotes from famous people.
 The .author class has the quote author's name.
 Extract and save all authors from the first page, in order, to /data/b6.json as an array of strings.
 E.g. `["Douglas Adams", "J.K. Rowling", ...]`
-""", external_port=external_port)
+""",
+        external_port=external_port,
+    )
     result = await read("/data/b6.json", external_port=external_port)
     try:
         authors = json.loads(result)
@@ -322,12 +351,17 @@ E.g. `["Douglas Adams", "J.K. Rowling", ...]`
     return True
 
 
-async def b7(email, external_port,**kwargs):
+async def b7(email, external_port, **kwargs):
     r, g, b = random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)
     url = f"https://dummyimage.com/100x100/{r:02x}{g:02x}{b:02x}/{r:02x}{g:02x}{b:02x}.png"
-    await run(f"Download the image at {url}, resize it to 50x50 px and save it to `/data/b7.png`",external_port=external_port)
+    await run(
+        f"Download the image at {url}, resize it to 50x50 px and save it to `/data/b7.png`",
+        external_port=external_port,
+    )
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.get(f"http://localhost:{external_port}/read?path=/data/b7.png")
+        response = await client.get(
+            f"http://localhost:{external_port}/read?path=/data/b7.png"
+        )
     if response.status_code != 200:
         return mismatch("/data/b7.png", "HTTP 200 status code", response.status_code)
     actual = Image.open(io.BytesIO(response.content)).convert("RGB")
@@ -338,9 +372,10 @@ async def b7(email, external_port,**kwargs):
     return True
 
 
-async def b8(email, external_port,token_counter, **kwargs):
+async def b8(email, external_port, token_counter, **kwargs):
     token_index = token_counter % 4
-    await run("""Fetch the audio file from https://archive.org/download/ed1-01/ed1-01.mp3 and transcribe it.
+    await run(
+        """Fetch the audio file from https://archive.org/download/ed1-01/ed1-01.mp3 and transcribe it.
 
 Send a post request to https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent
 with headers:
@@ -368,8 +403,10 @@ with body:
 }
 
 Extract the response.candidates?.[0].content?.parts?.[0]?.text into `/data/b8.txt`
-""".replace("$GEMINI_API_KEY", gemini_api_key[token_index]), external_port=external_port)
-    result = await read("/data/b8.txt", external_port = external_port)
+""".replace("$GEMINI_API_KEY", gemini_api_key[token_index]),
+        external_port=external_port,
+    )
+    result = await read("/data/b8.txt", external_port=external_port)
     expected = "well what if there is no tomorrow there wasn't one today"
     for word in expected.split():
         if word not in result.lower():
@@ -377,10 +414,10 @@ Extract the response.candidates?.[0].content?.parts?.[0]?.text into `/data/b8.tx
     return True
 
 
-async def b9(email, external_port,**kwargs):
+async def b9(email, external_port, **kwargs):
     await run(
         """Convert https://raw.githubusercontent.com/octocat/Spoon-Knife/d0dd1f61b33d64e29d8bc1372a94ef6a2fee76a9/README.md to HTML and save it to `/data/b9.html`""",
-        external_port=external_port
+        external_port=external_port,
     )
     result = await read("/data/b9.html", external_port=external_port)
     try:
@@ -392,21 +429,29 @@ async def b9(email, external_port,**kwargs):
     if len(h3) != 1 or "Well hello there!" not in h3[0].text_content():
         return mismatch("/data/b9.html", "H3 with 'Well hello there!'", result)
     a = html.findall("*//a")
-    if len(a) == 0 or a[0].get("href") != "https://github.com/octocat/Spoon-Knife/pulls":
+    if (
+        len(a) == 0
+        or a[0].get("href") != "https://github.com/octocat/Spoon-Knife/pulls"
+    ):
         return mismatch(
-            "/data/b9.html", "Link to https://github.com/octocat/Spoon-Knife/pulls", result
+            "/data/b9.html",
+            "Link to https://github.com/octocat/Spoon-Knife/pulls",
+            result,
         )
     return True
 
 
-async def b10(email, external_port,**kwargs):
+async def b10(email, external_port, **kwargs):
     data = get_tickets(email)
-    await run("""Run datasette via `uvx datasette /data/ticket-sales.db --port 8001` in the background.
+    await run(
+        """Run datasette via `uvx datasette /data/ticket-sales.db --port 8001` in the background.
 From `tickets` count the number of rows where `type` is "Bronze" using
 http://localhost:8001/ticket-sales.csv?sql=SELECT+COUNT(*)+FROM+tickets+WHERE+type+=%22Bronze%22
 and save it to /data/b10.csv.
 Then stop the datasette server.
-""", external_port=external_port)
+""",
+        external_port=external_port,
+    )
     result = await read("/data/b10.csv", external_port=external_port)
     expected = sum([1 for row in data if row[0].lower() == "bronze"])
     if str(expected) not in result:
@@ -416,12 +461,37 @@ Then stop the datasette server.
 
 async def main(email: str, external_port: str, token_counter: str):
     score, total = 0, 0
-    for task in [a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10]:
+    for task in [
+        a1,
+        a2,
+        a3,
+        a4,
+        a5,
+        a6,
+        a7,
+        a8,
+        a9,
+        a10,
+        b1,
+        b2,
+        b3,
+        b4,
+        b5,
+        b6,
+        b7,
+        b8,
+        b9,
+        b10,
+    ]:
         total += 1
         try:
-            if task == b8 : 
-                success = await task(email=email, external_port=external_port, token_counter=token_counter)
-            else :
+            if task == b8:
+                success = await task(
+                    email=email,
+                    external_port=external_port,
+                    token_counter=token_counter,
+                )
+            else:
                 success = await task(email=email, external_port=external_port)
 
         except Exception as e:
@@ -437,25 +507,32 @@ async def main(email: str, external_port: str, token_counter: str):
     response = httpx.post(
         "https://aiproxy.sanand.workers.dev/openai/v1/embeddings",
         headers={"Authorization": f"Bearer {openai_api_key}"},
-        json={
-            "model": "text-embedding-3-small",
-            "input":["A"]
-        },timeout=30
+        json={"model": "text-embedding-3-small", "input": ["A"]},
+        timeout=30,
     )
     if response.status_code != 200:
-        logging.error(f"🔴 Failed to send request to OpenAI API: {response.status_code}")
+        logging.error(
+            f"🔴 Failed to send request to OpenAI API: {response.status_code}"
+        )
         sys.exit(244)
+
 
 if __name__ == "__main__":
     import asyncio
     import argparse
 
-    parser = argparse.ArgumentParser(description="Evaluate tasks with configurable logging")
-    parser.add_argument("--email", default="user@example.com", help="Set the email address")
+    parser = argparse.ArgumentParser(
+        description="Evaluate tasks with configurable logging"
+    )
+    parser.add_argument(
+        "--email", default="user@example.com", help="Set the email address"
+    )
     parser.add_argument("--external_port")
     parser.add_argument("--token_counter")
     levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-    parser.add_argument("--log-level", default="INFO", choices=levels, help="Set logging level")
+    parser.add_argument(
+        "--log-level", default="INFO", choices=levels, help="Set logging level"
+    )
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level, format="%(message)s\n")
-    asyncio.run(main(args.email, args.external_port,args.token_counter))
+    asyncio.run(main(args.email, args.external_port, args.token_counter))
